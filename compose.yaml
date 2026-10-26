@@ -1,0 +1,25 @@
+name: smartpot-db-postgre
+
+services:
+  db-smartpot:
+    build: .
+    image: ghcr.io/smartpottech/smartpot-db-postgre:latest
+    container_name: smartpot-db-postgre
+    restart: unless-stopped
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    env_file:
+      - .env
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    tmpfs:
+      - /tmp
+      - /run/postgresql
+
+volumes:
+  db_data:
