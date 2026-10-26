@@ -13,18 +13,18 @@ La imagen trae el esquema, el usuario de la aplicación y, opcionalmente, datos 
 
 Diez tablas, todas con identificadores `CHAR(24)` generados por la API:
 
-| Tabla | Contenido |
-| --- | --- |
-| `users` | Cuentas de la plataforma (correo único, hash BCrypt, rol). |
-| `crops` | Cultivos reales o virtuales. `placement`, `device` y `health` como `JSONB`. |
-| `readings` | **Hipertabla**: telemetría de sensores. Una columna tipada por variable. |
-| `actuators` | Salidas de cada cultivo (bomba, luz UV, ventilador, etc.) y su estado. |
-| `commands` | Órdenes a los actuadores y su ciclo de vida. |
-| `notifications` | Alertas de la PWA (cuenta y cultivo). |
-| `password_reset_tokens` | Solo el SHA-256 del token de recuperación. |
-| `channel_links` | Vínculo de una cuenta con un canal externo (Telegram). |
-| `crop_channels` | Avisos de un cultivo por un canal; `recipients` como `JSONB`. |
-| `virtual_devices` | Configuración de simulación de un cultivo virtual. |
+| Tabla                   | Contenido                                                                   |
+|-------------------------|-----------------------------------------------------------------------------|
+| `users`                 | Cuentas de la plataforma (correo único, hash BCrypt, rol).                  |
+| `crops`                 | Cultivos reales o virtuales. `placement`, `device` y `health` como `JSONB`. |
+| `readings`              | **Hipertabla**: telemetría de sensores. Una columna tipada por variable.    |
+| `actuators`             | Salidas de cada cultivo (bomba, luz UV, ventilador, etc.) y su estado.      |
+| `commands`              | Órdenes a los actuadores y su ciclo de vida.                                |
+| `notifications`         | Alertas de la PWA (cuenta y cultivo).                                       |
+| `password_reset_tokens` | Solo el SHA-256 del token de recuperación.                                  |
+| `channel_links`         | Vínculo de una cuenta con un canal externo (Telegram).                      |
+| `crop_channels`         | Avisos de un cultivo por un canal; `recipients` como `JSONB`.               |
+| `virtual_devices`       | Configuración de simulación de un cultivo virtual.                          |
 
 ### Por qué PostgreSQL + TimescaleDB
 
@@ -50,12 +50,12 @@ idempotente.
 
 Copia `.env.example` a `.env` y complétalo. `SMARTPOT_DB_PASSWORD` debe tener al menos 16 caracteres.
 
-| Variable | Uso |
-| --- | --- |
-| `POSTGRES_USER` / `POSTGRES_PASSWORD` | Cuenta administradora (dueña del esquema). |
-| `POSTGRES_DB` | Base de la aplicación (por defecto `smartpot`). |
-| `SMARTPOT_DB_USERNAME` / `SMARTPOT_DB_PASSWORD` | Usuario de la aplicación (solo DML). |
-| `SMARTPOT_SEED_DEMO` | `true` carga `demo@smartpot.app` con dos cultivos y 48 h de lecturas. Solo en local o demo. |
+| Variable                                        | Uso                                                                                         |
+|-------------------------------------------------|---------------------------------------------------------------------------------------------|
+| `POSTGRES_USER` / `POSTGRES_PASSWORD`           | Cuenta administradora (dueña del esquema).                                                  |
+| `POSTGRES_DB`                                   | Base de la aplicación (por defecto `smartpot`).                                             |
+| `SMARTPOT_DB_USERNAME` / `SMARTPOT_DB_PASSWORD` | Usuario de la aplicación (solo DML).                                                        |
+| `SMARTPOT_SEED_DEMO`                            | `true` carga `demo@smartpot.app` con dos cultivos y 48 h de lecturas. Solo en local o demo. |
 
 ## Uso
 
