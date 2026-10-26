@@ -120,10 +120,13 @@ CREATE TABLE IF NOT EXISTS readings
     soil_moisture DOUBLE PRECISION
     );
 -- Hipertabla con fragmentos (chunks) de 7 días; la columna de partición es measured_at.
-SELECT create_hypertable('readings', by_range('measured_at', INTERVAL '7 days'), if_not_exists = > TRUE);
+-- Argumentos posicionales a propósito (create_default_indexes, if_not_exists): evitan el operador `=>`,
+-- que algunos formateadores de SQL parten en `= >` y rompen el arranque de la base.
+SELECT create_hypertable('readings', by_range('measured_at', INTERVAL '7 days'), TRUE, TRUE);
 CREATE INDEX IF NOT EXISTS readings_crop_measured ON readings (crop_id, measured_at DESC);
 -- Retención de 1 año: TimescaleDB descarta los fragmentos antiguos (equivale al índice TTL anterior).
-SELECT add_retention_policy('readings', INTERVAL '365 days', if_not_exists = > TRUE);
+-- Tercer argumento posicional = if_not_exists (ver nota de arriba sobre `=>`).
+SELECT add_retention_policy('readings', INTERVAL '365 days', TRUE);
 
 -- Salidas de cada cultivo (bomba, luz UV, ventilador, humidificador y dosificadores) y su estado confirmado.
 CREATE TABLE IF NOT EXISTS actuators
