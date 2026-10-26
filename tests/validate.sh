@@ -14,16 +14,19 @@ cleanup() { docker rm -f "$NAME" >/dev/null 2>&1 || true; }
 trap cleanup EXIT
 cleanup
 
+# Endurecido: root de solo lectura, sin privilegios nuevos y solo los caps que el entrypoint de PostgreSQL necesita
+# para preparar su directorio de datos y bajar al usuario postgres (los caps de escalado siguen descartados).
 docker run -d --name "$NAME" \
-  --read-only --tmpfs /tmp --tmpfs /run/postgresql \
-  --cap-drop ALL --security-opt no-new-privileges \
+  --read-only --tmpfs /tmp --tmpfs /run/postgresql --tmpfs /var/lib/postgresql/data \
+  --cap-drop ALL --cap-add CHOWN --cap-add DAC_OVERRIDE --cap-add FOWNER --cap-add SETGID --cap-add SETUID \
+  --security-opt no-new-privileges \
   -e POSTGRES_USER=smartpot-root -e POSTGRES_PASSWORD="$ROOT_PASS" -e POSTGRES_DB=smartpot \
   -e SMARTPOT_DB_USERNAME=smartpot -e SMARTPOT_DB_PASSWORD="$APP_PASS" -e SMARTPOT_SEED_DEMO="$DEMO" \
   "$IMAGE" >/dev/null
 
 # Las consultas de la aplicación usan el usuario smartpot; las de administración, la cuenta root del contenedor.
-app() { docker exec -e PGPASSWORD="$APP_PASS" "$NAME" psql -tA -v ON_ERROR_STOP=1 -U smartpot -d smartpot -c "$1"; }
-root() { docker exec "$NAME" psql -tA -v ON_ERROR_STOP=1 -U smartpot-root -d smartpot -c "$1"; }
+app() { docker exec -e PGPASSWORD="$APP_PASS" "$NAME" psql -qtA -v ON_ERROR_STOP=1 -U smartpot -d smartpot -c "$1"; }
+root() { docker exec "$NAME" psql -qtA -v ON_ERROR_STOP=1 -U smartpot-root -d smartpot -c "$1"; }
 migrate() { docker exec "$NAME" /opt/smartpot/migrate.sh; }
 
 # Se espera a que el servidor acepte conexiones y a que el usuario de la aplicación exista (fin del init).

@@ -9,8 +9,16 @@ services:
     read_only: true
     security_opt:
       - no-new-privileges:true
+    # Solo los caps que el entrypoint de PostgreSQL necesita para preparar su directorio de datos y bajar al
+    # usuario postgres; los caps de escalado (NET_ADMIN, SYS_ADMIN, etc.) siguen descartados.
     cap_drop:
       - ALL
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - FOWNER
+      - SETGID
+      - SETUID
     env_file:
       - .env
     ports:
