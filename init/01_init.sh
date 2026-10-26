@@ -21,15 +21,14 @@ psql_super -f /opt/smartpot/schema.sql
 
 echo "SmartPot: creando el usuario de la aplicación '$APP_USER'"
 psql_super --set=app_user="$APP_USER" --set=app_password="$APP_PASSWORD" --set=app_db="$POSTGRES_DB" <<'SQL'
-DO $$
-BEGIN
-    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = :'app_user') THEN
-        EXECUTE format('CREATE ROLE %I LOGIN PASSWORD %L', :'app_user', :'app_password');
-    ELSE
-        EXECUTE format('ALTER ROLE %I LOGIN PASSWORD %L', :'app_user', :'app_password');
-    END IF;
-END
-$$;
+-- Crea o actualiza el rol de la aplicación con su clave. Se usa \gexec (no un bloque DO) porque psql solo
+-- sustituye sus variables en el texto SQL normal, no dentro de un cuerpo dollar-quoted.
+SELECT format('CREATE ROLE %I LOGIN PASSWORD %L', :'app_user', :'app_password')
+WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = :'app_user')
+UNION ALL
+SELECT format('ALTER ROLE %I LOGIN PASSWORD %L', :'app_user', :'app_password')
+WHERE EXISTS (SELECT 1 FROM pg_roles WHERE rolname = :'app_user')
+\gexec
 
 -- La API solo hace DML: lee y escribe datos, no modifica el esquema.
 GRANT CONNECT ON DATABASE :"app_db" TO :"app_user";
