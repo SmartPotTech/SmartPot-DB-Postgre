@@ -1,0 +1,30 @@
+name: Database Image CI
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Build and Validate Image (demo=${{ matrix.seed-demo }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+
+    strategy:
+      matrix:
+        seed-demo: [ "false", "true" ]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Build the Docker image
+        run: docker build -t smartpot-db-postgre:ci .
+
+      - name: Validate schema, hypertable, permissions and demo data
+        run: sh tests/validate.sh smartpot-db-postgre:ci ${{ matrix.seed-demo }}
