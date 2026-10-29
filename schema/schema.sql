@@ -124,9 +124,58 @@ CREATE TABLE IF NOT EXISTS readings
 -- que algunos formateadores de SQL parten en `= >` y rompen el arranque de la base.
 SELECT create_hypertable('readings', by_range('measured_at', INTERVAL '7 days'), TRUE, TRUE);
 CREATE INDEX IF NOT EXISTS readings_crop_measured ON readings (crop_id, measured_at DESC);
+CREATE INDEX IF NOT EXISTS readings_measured_at_brin ON readings USING BRIN (measured_at);
+
 -- Retención de 1 año: TimescaleDB descarta los fragmentos antiguos (equivale al índice TTL anterior).
 -- Tercer argumento posicional = if_not_exists (ver nota de arriba sobre `=>`).
 SELECT add_retention_policy('readings', INTERVAL '365 days', TRUE);
+
+-- Compresión columnar nativa de TimescaleDB para fragmentos históricos mayores a 30 días.
+-- Agrupa por cultivo y ordena por tiempo descendente para maximizar el ratio de compresión.
+ALTER TABLE readings SET (
+    timescaledb.compress,
+    timescaledb.compress_segmentby = 'crop_id',
+    timescaledb.compress_orderby = 'measured_at DESC'
+);
+SELECT add_compression_policy('readings', INTERVAL '30 days', TRUE);
+
+-- Vista materializada continua para acelerar consultas analíticas y series temporales sin escanear datos crudos.
+CREATE MATERIALIZED VIEW IF NOT EXISTS readings_hourly
+WITH (timescaledb.continuous) AS
+SELECT crop_id,
+       time_bucket('1 hour', measured_at) AS bucket,
+       min(temperature) AS min_temperature,
+       avg(temperature) AS avg_temperature,
+       max(temperature) AS max_temperature,
+       min(humidity) AS min_humidity,
+       avg(humidity) AS avg_humidity,
+       max(humidity) AS max_humidity,
+       min(brightness) AS min_brightness,
+       avg(brightness) AS avg_brightness,
+       max(brightness) AS max_brightness,
+       min(ph) AS min_ph,
+       avg(ph) AS avg_ph,
+       max(ph) AS max_ph,
+       min(tds) AS min_tds,
+       avg(tds) AS avg_tds,
+       max(tds) AS max_tds,
+       min(atmosphere) AS min_atmosphere,
+       avg(atmosphere) AS avg_atmosphere,
+       max(atmosphere) AS max_atmosphere,
+       min(soil_moisture) AS min_soil_moisture,
+       avg(soil_moisture) AS avg_soil_moisture,
+       max(soil_moisture) AS max_soil_moisture,
+       count(*) AS reading_count
+FROM readings
+GROUP BY crop_id, bucket
+WITH NO DATA;
+
+-- Política de refresco automático: refresca ventanas de 30 días a 1 hora hacia atrás.
+SELECT add_continuous_aggregate_policy('readings_hourly',
+    start_offset => INTERVAL '30 days',
+    end_offset => INTERVAL '1 hour',
+    schedule_interval => INTERVAL '1 hour',
+    if_not_exists => TRUE);
 
 -- Salidas de cada cultivo (bomba, luz UV, ventilador, humidificador y dosificadores) y su estado confirmado.
 CREATE TABLE IF NOT EXISTS actuators

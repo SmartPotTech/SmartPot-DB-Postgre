@@ -37,6 +37,15 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO :"app_use
 GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO :"app_user";
 ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO :"app_user";
 ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO :"app_user";
+
+-- Ajustes de rendimiento del motor para carga mixta IoT y telemetría de alta frecuencia
+ALTER SYSTEM SET shared_buffers = '256MB';
+ALTER SYSTEM SET work_mem = '16MB';
+ALTER SYSTEM SET effective_cache_size = '768MB';
+ALTER SYSTEM SET wal_compression = 'zstd';
+ALTER SYSTEM SET checkpoint_completion_target = '0.9';
+ALTER SYSTEM SET random_page_cost = '1.1';
+SELECT pg_reload_conf();
 SQL
 
 if [ "$(printf '%s' "${SMARTPOT_SEED_DEMO:-false}" | tr '[:upper:]' '[:lower:]')" = "true" ]; then
