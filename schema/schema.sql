@@ -124,6 +124,7 @@ CREATE TABLE IF NOT EXISTS readings
 -- que algunos formateadores de SQL parten en `= >` y rompen el arranque de la base.
 SELECT create_hypertable('readings', by_range('measured_at', INTERVAL '7 days'), TRUE, TRUE);
 CREATE INDEX IF NOT EXISTS readings_crop_measured ON readings (crop_id, measured_at DESC);
+CREATE INDEX IF NOT EXISTS readings_crop_measured_covering ON readings (crop_id, measured_at DESC) INCLUDE (temperature, humidity, brightness, ph, tds, atmosphere, soil_moisture);
 CREATE INDEX IF NOT EXISTS readings_measured_at_brin ON readings USING BRIN (measured_at);
 
 -- Retención de 1 año: TimescaleDB descarta los fragmentos antiguos (equivale al índice TTL anterior).
