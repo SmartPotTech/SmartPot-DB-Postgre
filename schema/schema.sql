@@ -89,6 +89,20 @@ CREATE INDEX IF NOT EXISTS crops_owner_created ON crops (owner_id, created_at DE
 -- Para sincronizar en el broker las cuentas de los cultivos con clave de dispositivo al reconectar.
 CREATE INDEX IF NOT EXISTS crops_with_device_key ON crops ((device ->> 'keyCiphertext')) WHERE device ->> 'keyCiphertext' IS NOT NULL;
 
+-- Aislamiento Multi-Tenant con Row-Level Security (RLS)
+ALTER TABLE crops ENABLE ROW LEVEL SECURITY;
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_policies WHERE tablename = 'crops' AND policyname = 'crops_tenant_isolation'
+    ) THEN
+        CREATE POLICY crops_tenant_isolation ON crops
+        FOR ALL
+        USING (NULLIF(current_setting('app.current_tenant_id', true), '') IS NULL OR owner_id = current_setting('app.current_tenant_id', true))
+        WITH CHECK (NULLIF(current_setting('app.current_tenant_id', true), '') IS NULL OR owner_id = current_setting('app.current_tenant_id', true));
+    END IF;
+END $$;
+
 -- Telemetría de los sensores: hipertabla de TimescaleDB particionada por tiempo. Cada variable es una columna
 -- opcional (°C, % HR, lux, pH, ppm, hPa y % de humedad del sustrato).
 CREATE TABLE IF NOT EXISTS readings
@@ -119,10 +133,11 @@ CREATE TABLE IF NOT EXISTS readings
     atmosphere DOUBLE PRECISION,
     soil_moisture DOUBLE PRECISION
     );
--- Hipertabla con fragmentos (chunks) de 7 días; la columna de partición es measured_at.
+-- Hipertabla con fragmentos (chunks) de 1 día; la columna de partición es measured_at.
 -- Argumentos posicionales a propósito (create_default_indexes, if_not_exists): evitan el operador `=>`,
 -- que algunos formateadores de SQL parten en `= >` y rompen el arranque de la base.
-SELECT create_hypertable('readings', by_range('measured_at', INTERVAL '7 days'), TRUE, TRUE);
+SELECT create_hypertable('readings', by_range('measured_at', INTERVAL '1 day'), TRUE, TRUE);
+SELECT set_chunk_time_interval('readings', INTERVAL '1 day');
 CREATE INDEX IF NOT EXISTS readings_crop_measured ON readings (crop_id, measured_at DESC);
 CREATE INDEX IF NOT EXISTS readings_crop_measured_covering ON readings (crop_id, measured_at DESC) INCLUDE (temperature, humidity, brightness, ph, tds, atmosphere, soil_moisture);
 CREATE INDEX IF NOT EXISTS readings_measured_at_brin ON readings USING BRIN (measured_at);
@@ -131,14 +146,88 @@ CREATE INDEX IF NOT EXISTS readings_measured_at_brin ON readings USING BRIN (mea
 -- Tercer argumento posicional = if_not_exists (ver nota de arriba sobre `=>`).
 SELECT add_retention_policy('readings', INTERVAL '365 days', TRUE);
 
--- Compresión columnar nativa de TimescaleDB para fragmentos históricos mayores a 30 días.
+-- Compresión columnar nativa de TimescaleDB para fragmentos históricos mayores a 12 horas.
 -- Agrupa por cultivo y ordena por tiempo descendente para maximizar el ratio de compresión.
 ALTER TABLE readings SET (
     timescaledb.compress,
     timescaledb.compress_segmentby = 'crop_id',
     timescaledb.compress_orderby = 'measured_at DESC'
 );
-SELECT add_compression_policy('readings', INTERVAL '30 days', TRUE);
+SELECT add_compression_policy('readings', INTERVAL '12 hours', TRUE);
+
+-- Vista continua de 1 minuto para streaming y resolución en tiempo real
+CREATE MATERIALIZED VIEW IF NOT EXISTS readings_1m
+WITH (timescaledb.continuous) AS
+SELECT crop_id,
+       time_bucket('1 minute', measured_at) AS bucket,
+       min(temperature) AS min_temperature,
+       avg(temperature) AS avg_temperature,
+       max(temperature) AS max_temperature,
+       min(humidity) AS min_humidity,
+       avg(humidity) AS avg_humidity,
+       max(humidity) AS max_humidity,
+       min(brightness) AS min_brightness,
+       avg(brightness) AS avg_brightness,
+       max(brightness) AS max_brightness,
+       min(ph) AS min_ph,
+       avg(ph) AS avg_ph,
+       max(ph) AS max_ph,
+       min(tds) AS min_tds,
+       avg(tds) AS avg_tds,
+       max(tds) AS max_tds,
+       min(atmosphere) AS min_atmosphere,
+       avg(atmosphere) AS avg_atmosphere,
+       max(atmosphere) AS max_atmosphere,
+       min(soil_moisture) AS min_soil_moisture,
+       avg(soil_moisture) AS avg_soil_moisture,
+       max(soil_moisture) AS max_soil_moisture,
+       count(*) AS reading_count
+FROM readings
+GROUP BY crop_id, bucket
+WITH NO DATA;
+
+SELECT add_continuous_aggregate_policy('readings_1m',
+    start_offset => INTERVAL '2 hours',
+    end_offset => INTERVAL '1 minute',
+    schedule_interval => INTERVAL '1 minute',
+    if_not_exists => TRUE);
+
+-- Vista continua de 15 minutos para series intermedias y agregación analítica
+CREATE MATERIALIZED VIEW IF NOT EXISTS readings_15m
+WITH (timescaledb.continuous) AS
+SELECT crop_id,
+       time_bucket('15 minutes', measured_at) AS bucket,
+       min(temperature) AS min_temperature,
+       avg(temperature) AS avg_temperature,
+       max(temperature) AS max_temperature,
+       min(humidity) AS min_humidity,
+       avg(humidity) AS avg_humidity,
+       max(humidity) AS max_humidity,
+       min(brightness) AS min_brightness,
+       avg(brightness) AS avg_brightness,
+       max(brightness) AS max_brightness,
+       min(ph) AS min_ph,
+       avg(ph) AS avg_ph,
+       max(ph) AS max_ph,
+       min(tds) AS min_tds,
+       avg(tds) AS avg_tds,
+       max(tds) AS max_tds,
+       min(atmosphere) AS min_atmosphere,
+       avg(atmosphere) AS avg_atmosphere,
+       max(atmosphere) AS max_atmosphere,
+       min(soil_moisture) AS min_soil_moisture,
+       avg(soil_moisture) AS avg_soil_moisture,
+       max(soil_moisture) AS max_soil_moisture,
+       count(*) AS reading_count
+FROM readings
+GROUP BY crop_id, bucket
+WITH NO DATA;
+
+SELECT add_continuous_aggregate_policy('readings_15m',
+    start_offset => INTERVAL '24 hours',
+    end_offset => INTERVAL '15 minutes',
+    schedule_interval => INTERVAL '15 minutes',
+    if_not_exists => TRUE);
 
 -- Vista materializada continua para acelerar consultas analíticas y series temporales sin escanear datos crudos.
 CREATE MATERIALIZED VIEW IF NOT EXISTS readings_hourly

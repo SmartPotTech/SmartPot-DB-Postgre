@@ -6,6 +6,8 @@ set -eu
 
 APP_USER="${SMARTPOT_DB_USERNAME:-smartpot}"
 APP_PASSWORD="${SMARTPOT_DB_PASSWORD:-}"
+INGEST_USER="${SMARTPOT_INGEST_USERNAME:-smartpot_ingest}"
+INGEST_PASSWORD="${SMARTPOT_INGEST_PASSWORD:-${APP_PASSWORD}}"
 
 if [ "${#APP_PASSWORD}" -lt 16 ]; then
     echo "SMARTPOT_DB_PASSWORD debe tener al menos 16 caracteres" >&2
@@ -19,10 +21,9 @@ psql_super() {
 echo "SmartPot: aplicando el esquema en la base '$POSTGRES_DB'"
 psql_super -f /opt/smartpot/schema.sql
 
-echo "SmartPot: creando el usuario de la aplicación '$APP_USER'"
-psql_super --set=app_user="$APP_USER" --set=app_password="$APP_PASSWORD" --set=app_db="$POSTGRES_DB" <<'SQL'
--- Crea o actualiza el rol de la aplicación con su clave. Se usa \gexec (no un bloque DO) porque psql solo
--- sustituye sus variables en el texto SQL normal, no dentro de un cuerpo dollar-quoted.
+echo "SmartPot: configurando roles diferenciados ('$APP_USER' transaccional y '$INGEST_USER' ingesta asíncrona)"
+psql_super --set=app_user="$APP_USER" --set=app_password="$APP_PASSWORD" --set=ingest_user="$INGEST_USER" --set=ingest_password="$INGEST_PASSWORD" --set=app_db="$POSTGRES_DB" <<'SQL'
+-- 1. Rol de la aplicación transaccional (synchronous_commit = on)
 SELECT format('CREATE ROLE %I LOGIN PASSWORD %L', :'app_user', :'app_password')
 WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = :'app_user')
 UNION ALL
@@ -30,13 +31,30 @@ SELECT format('ALTER ROLE %I LOGIN PASSWORD %L', :'app_user', :'app_password')
 WHERE EXISTS (SELECT 1 FROM pg_roles WHERE rolname = :'app_user')
 \gexec
 
--- La API solo hace DML: lee y escribe datos, no modifica el esquema.
-GRANT CONNECT ON DATABASE :"app_db" TO :"app_user";
-GRANT USAGE ON SCHEMA public TO :"app_user";
+ALTER ROLE :"app_user" SET synchronous_commit = 'on';
+
+-- 2. Rol de ingesta masiva de telemetría (synchronous_commit = off, commit_delay = 10ms)
+SELECT format('CREATE ROLE %I LOGIN PASSWORD %L', :'ingest_user', :'ingest_password')
+WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = :'ingest_user')
+UNION ALL
+SELECT format('ALTER ROLE %I LOGIN PASSWORD %L', :'ingest_user', :'ingest_password')
+WHERE EXISTS (SELECT 1 FROM pg_roles WHERE rolname = :'ingest_user')
+\gexec
+
+ALTER ROLE :"ingest_user" SET synchronous_commit = 'off';
+ALTER ROLE :"ingest_user" SET commit_delay = 10000;
+
+-- Permisos DML para la API y rol transaccional
+GRANT CONNECT ON DATABASE :"app_db" TO :"app_user", :"ingest_user";
+GRANT USAGE ON SCHEMA public TO :"app_user", :"ingest_user";
 GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO :"app_user";
 GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO :"app_user";
 ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO :"app_user";
 ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO :"app_user";
+
+-- Permisos específicos para el rol de ingesta sobre telemetría
+GRANT SELECT, INSERT ON TABLE readings TO :"ingest_user";
+GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO :"ingest_user";
 
 -- Ajustes de rendimiento del motor para carga mixta IoT y telemetría de alta frecuencia
 ALTER SYSTEM SET shared_buffers = '256MB';
