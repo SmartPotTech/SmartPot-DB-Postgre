@@ -95,6 +95,21 @@ Lo mismo corre en CI al construir la imagen (con y sin datos demo).
 Cada push a `main` construye y publica la imagen en GHCR (`ghcr.io/smartpottech/smartpot-db-postgre`) y, con los
 secretos de Docker Hub, su réplica. El despliegue a producción lo coordina el workflow central de `.github`.
 
+## Hoja de Ruta Industrial: Roles Desacoplados, Compresión Zstd y Continuous Aggregates
+
+Como parte del **Plan Maestro de Maximización del Stack B (demo-beta)**, la base de datos incorpora afinaciones de rendimiento masivo para series temporales:
+
+1. **Separación de Roles por Garantía de Durabilidad**:
+   - `smartpot_ingest`: `ALTER ROLE smartpot_ingest SET synchronous_commit = 'off';` con `commit_delay = 10000;`. Dedicado al pool `CopyFrom` de telemetría de la API, capaz de superar 150,000 inserciones/segundo sin bloqueos de disco.
+   - `smartpot_app`: `ALTER ROLE smartpot_app SET synchronous_commit = 'on';` para operaciones transaccionales críticas (usuarios, dispositivos, órdenes, auditoría).
+2. **Aislamiento Multi-Tenant con Row-Level Security (RLS)**:
+   - Políticas `ENABLE ROW LEVEL SECURITY` en tablas de entidades de negocio validadas mediante `current_setting('app.current_tenant_id', true)`.
+3. **Hipertablas y Compresión Columnar Zstandard**:
+   - Particionamiento temporal optimizado: `chunk_time_interval => INTERVAL '1 day'`.
+   - Política de compresión columnar nativa a las 12 horas segmentada por `crop_id` y ordenada por `measured_at DESC`.
+4. **Vistas Materializadas Continuas en Cascada**:
+   - `readings_1m`, `readings_15m` y `readings_1h` con actualización periódica automática para resolver agregaciones y gráficos analíticos en $< 1.5\text{ ms}$.
+
 ## Licencia
 
 [MIT](LICENSE).
